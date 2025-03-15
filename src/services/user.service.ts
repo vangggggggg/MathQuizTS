@@ -4,7 +4,14 @@ import { Role } from "@prisma/client";
 import { mapUserToDTO } from "../dto/user.mapper";
 import bcrypt from "bcryptjs";
 import { UserDTO } from "../dto/user.dto";
+import jwt from "jsonwebtoken";
+import { JWT_SECRET_ACCESS, JWT_SECRET_REFRESH } from "../config/config";
 
+interface AuthResponse {
+    user: UserDTO;
+    accessToken: string;
+    refreshToken: string;
+}
 
 export class UserService {
     async createUser(userClient: User): Promise<UserDTO> {
@@ -30,23 +37,22 @@ export class UserService {
             //   LIMIT 1;
             // `;
 
-
             if (existingUser) {
                 throw new Error("User already exists");
             }
 
             const user = await prisma.user.create({
-                data: { ...userClient, password: hashedPassword, role: Role.student , grade: userClient.grade ?? "N/A"}  ,
+                data: { ...userClient, password: hashedPassword, role: Role.student, grade: userClient.grade ?? "N/A" },
             });
-            
+
             return mapUserToDTO(user as User);
-            
+
         } catch (error) {
             throw error;
         }
     }
 
-    async login(username: string, password: string): Promise<UserDTO> {
+    async login(username: string, password: string): Promise<AuthResponse> {
         if (!username || !password) {
             throw new Error("Username and password are required");
         }
@@ -62,7 +68,14 @@ export class UserService {
             throw new Error("Invalid password");
         }
 
-        return mapUserToDTO(user as User);
+        const accessToken = await this.generateAccessToken(user.id, user.role);
+        const refreshToken = await this.generateRefreshToken(user.id, user.role);
+
+        return {
+            user: mapUserToDTO(user as User),
+            accessToken,
+            refreshToken
+        };
     }
 
     async getUserByUsername(username: string) {
@@ -104,6 +117,16 @@ export class UserService {
         } catch (error) {
             throw error;
         }
+    }
+
+    // Hàm tạo Access Token
+    async generateAccessToken(userId: string, userRole: Role) {
+        return jwt.sign({ id: userId, role: userRole }, JWT_SECRET_ACCESS, { expiresIn: "15m" });
+    }
+    
+    // Hàm tạo Refresh Token
+    async generateRefreshToken(userId: string, userRole: Role) {
+        return jwt.sign({ id: userId, role: userRole }, JWT_SECRET_REFRESH, { expiresIn: "7d" });
     }
 
 }
